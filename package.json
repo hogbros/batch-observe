@@ -1,5 +1,5 @@
 {
-  "name": "batch-observe",
+  "name": "@hogbros/batch-observe",
   "version": "0.1.0",
   "description": "Observe object property changes in batch asynchronously",
   "main": "./cjs/batch-observe.js",
