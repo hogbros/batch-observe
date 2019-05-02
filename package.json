@@ -1,0 +1,60 @@
+{
+  "name": "@hogbros/batch-observe",
+  "version": "0.1.0",
+  "description": "Observe object property changes in batch asynchronously",
+  "main": "./cjs/batch-observe.js",
+  "module": "./batch-observe.js",
+  "files": [
+    "/src/",
+    "/cjs/",
+    "/batch-observe.js",
+    "/batch-observe.js.map",
+    "/batch-observe.d.ts",
+    "/batch-observe.d.ts.map"
+  ],
+  "scripts": {
+    "test": "nyc --reporter text mocha -r register-test test/**/*.spec.ts",
+    "build": "tsc & tsc --module CommonJS --outDir ./cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hogbros/batch-observe.git"
+  },
+  "author": "Hogbros",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hogbros/batch-observe/issues"
+  },
+  "homepage": "https://github.com/hogbros/batch-observe#readme",
+  "devDependencies": {
+    "@types/chai": "^4.1.7",
+    "@types/mocha": "^5.2.6",
+    "@types/sinon": "^7.0.11",
+    "@types/sinon-chai": "^3.2.2",
+    "chai": "^4.2.0",
+    "mocha": "^6.1.4",
+    "nyc": "^14.0.0",
+    "sinon": "^7.3.2",
+    "sinon-chai": "^3.3.0",
+    "ts-node": "^8.1.0",
+    "typescript": "^3.4.5"
+  },
+  "nyc": {
+    "extension": [
+      ".ts"
+    ],
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "**/*.d.ts"
+    ],
+    "reporter": [
+      "text"
+    ],
+    "all": true
+  },
+  "dependencies": {
+    "@hogbros/observe-property": "^0.1.0"
+  }
+}
