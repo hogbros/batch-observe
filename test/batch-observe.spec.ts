@@ -1,34 +1,40 @@
-import { batchObserve, PropertyChangeState } from "../src/batch-observe";
+import { UpdatePipeline, PropertyChangeState } from "../src/batch-observe";
 import { spy } from "sinon";
 import { expect } from "chai";
 
 describe("batchObserve", function() {
   it("asynchronously calls the callback", async function() {
     const callbackSpy = spy();
-    const myObject = {
-      foo: "bar"
-    };
-    const observeProperty = batchObserve<typeof myObject>(callbackSpy);
-    observeProperty(myObject, "foo");
-    myObject.foo = "baz";
+    const pipeline = new UpdatePipeline<MyClass>(callbackSpy);
+    class MyClass {
+      @pipeline.decorateProperty()
+      foo?: string;
+    }
+    const myObject = new MyClass();
+    myObject.foo = "bar";
 
     expect(callbackSpy).to.not.have.been.called;
-    await Promise.resolve();
+    await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.have.been.called;
   });
   it("will pass all updated properties to the callback", async function() {
-    const myObject = {
-      foo: "a",
-      bar: "b"
-    };
     const callbackSpy = spy();
-    const observeProperty = batchObserve<typeof myObject>(callbackSpy);
-    observeProperty(myObject, "foo");
-    observeProperty(myObject, "bar");
+    const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
+    class MyClass {
+      @pipeline.decorateProperty()
+      foo: string = "a";
+
+      @pipeline.decorateProperty()
+      bar: string = "b";
+    }
+    const myObject = new MyClass();
+    await pipeline.whenUpdateComplete(myObject);
+    callbackSpy.resetHistory();
+
     myObject.foo = "c";
     myObject.bar = "d";
 
-    await Promise.resolve();
+    await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.have.been.calledWith(myObject);
     const updatedProperties: Map<keyof typeof myObject, PropertyChangeState> =
       callbackSpy.args[0][1];
@@ -42,16 +48,20 @@ describe("batchObserve", function() {
     expect(barUpdateState!.value).to.equal("d");
   });
   it("will pass the latest value from an updated property to the callback", async function() {
-    const myObject = {
-      foo: "a"
-    };
     const callbackSpy = spy();
-    const observeProperty = batchObserve<typeof myObject>(callbackSpy);
-    observeProperty(myObject, "foo");
+    const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
+    class MyClass {
+      @pipeline.decorateProperty()
+      foo: string = "a";
+    }
+    const myObject = new MyClass();
+    await pipeline.whenUpdateComplete(myObject);
+    callbackSpy.resetHistory();
+
     myObject.foo = "b";
     myObject.foo = "c";
 
-    await Promise.resolve();
+    await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.have.been.calledOnce.and.calledWith(myObject);
     const updatedProperties: Map<keyof typeof myObject, PropertyChangeState> =
       callbackSpy.args[0][1];
@@ -61,50 +71,70 @@ describe("batchObserve", function() {
     expect(fooUpdateState!.value).to.equal("c");
   });
   it("will not pass a property to the callback if it is reverted to its old value", async function() {
-    const myObject = {
-      foo: "a",
-      bar: "b"
-    };
     const callbackSpy = spy();
-    const observeProperty = batchObserve<typeof myObject>(callbackSpy);
-    observeProperty(myObject, "foo");
-    observeProperty(myObject, "bar");
+    const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
+    class MyClass {
+      @pipeline.decorateProperty()
+      foo: string = "a";
+
+      @pipeline.decorateProperty()
+      bar: string = "b";
+    }
+    const myObject = new MyClass();
+    await pipeline.whenUpdateComplete(myObject);
+    callbackSpy.resetHistory();
+
     myObject.foo = "c";
     myObject.bar = "d";
     myObject.foo = "a";
 
-    await Promise.resolve();
+    await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.have.been.calledOnce;
     const updatedProperties: Map<keyof typeof myObject, PropertyChangeState> =
       callbackSpy.args[0][1];
     expect(updatedProperties.has("foo")).to.be.false;
   });
   it("will not update if all updated properties are reverted to their old value", async function() {
-    const myObject = {
-      foo: "a"
-    };
     const callbackSpy = spy();
-    const observeProperty = batchObserve<typeof myObject>(callbackSpy);
-    observeProperty(myObject, "foo");
+    const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
+    class MyClass {
+      @pipeline.decorateProperty()
+      foo: string = "a";
+    }
+    const myObject = new MyClass();
+    await pipeline.whenUpdateComplete(myObject);
+    callbackSpy.resetHistory();
+
     myObject.foo = "b";
     myObject.foo = "a";
 
-    await Promise.resolve();
+    await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.not.have.been.called;
   });
   it("will allow multiple update pipelines to be registered to an object", async function() {
-    const myObject = {
-      foo: "a"
-    };
     const callbackSpy1 = spy();
     const callbackSpy2 = spy();
-    const observeProperty1 = batchObserve<typeof myObject>(callbackSpy1);
-    const observeProperty2 = batchObserve<typeof myObject>(callbackSpy2);
-    observeProperty1(myObject, "foo");
-    observeProperty2(myObject, "foo");
+    const pipeline1 = new UpdatePipeline<typeof myObject>(callbackSpy1);
+    const pipeline2 = new UpdatePipeline<typeof myObject>(callbackSpy2);
+    class MyClass {
+      @pipeline1.decorateProperty()
+      @pipeline2.decorateProperty()
+      foo: string = "a";
+    }
+    const myObject = new MyClass();
+    await Promise.all([
+      pipeline1.whenUpdateComplete(myObject),
+      pipeline2.whenUpdateComplete(myObject)
+    ]);
+    callbackSpy1.resetHistory();
+    callbackSpy2.resetHistory();
+
     myObject.foo = "b";
 
-    await Promise.resolve();
+    await Promise.all([
+      pipeline1.whenUpdateComplete(myObject),
+      pipeline2.whenUpdateComplete(myObject)
+    ]);
     expect(callbackSpy1).to.have.been.calledOnce;
     expect(callbackSpy2).to.have.been.calledOnce;
   });
