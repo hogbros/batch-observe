@@ -15,7 +15,8 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
-    "outDir": "./"
+    "outDir": "./",
+    "experimentalDecorators": true
   },
   "include": ["src/**/*.ts"],
   "exclude": []
