@@ -1,6 +1,6 @@
 {
   "name": "@hogbros/batch-observe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Observe object property changes in batch asynchronously",
   "main": "./cjs/batch-observe.js",
   "module": "./batch-observe.js",
@@ -33,7 +33,7 @@
     "@types/sinon-chai": "^3.2.2",
     "chai": "^4.2.0",
     "mocha": "^6.1.4",
-    "nyc": "^14.0.0",
+    "nyc": "^14.1.0",
     "sinon": "^7.3.2",
     "sinon-chai": "^3.3.0",
     "ts-node": "^8.1.0",
@@ -55,6 +55,7 @@
     "all": true
   },
   "dependencies": {
-    "@hogbros/observe-property": "^0.1.0"
+    "@hogbros/observe-property": "^0.2.0",
+    "lit-html": "^1.0.0"
   }
 }

@@ -1,62 +1,123 @@
-import { observeProperty } from "@hogbros/observe-property";
+import { onSet } from "@hogbros/observe-property";
 
 export interface PropertyChangeState<Value = any> {
   oldValue: Value;
   value: Value;
 }
 
+export interface ChangeDetector<Value> {
+  (oldValue: Value, newValue: Value): boolean;
+}
+
 function notEqual(a: any, b: any) {
   return a !== b;
 }
 
-export function batchObserve<Target>(
-  callback: (
-    target: Target,
-    changedProperties: Map<keyof Target, PropertyChangeState>
-  ) => any
-) {
-  const UPDATING_PROPERTIES = Symbol();
+export class CallbackPipeline<Target> {
+  private updatingPromise = Symbol();
+  private updateConditions = Symbol();
 
-  interface BatchObserved {
-    [UPDATING_PROPERTIES]?: Map<keyof Target, PropertyChangeState>;
+  constructor(private callback: (target: Target) => void) {}
+
+  requestUpdate(target: Target, condition: () => boolean = () => true) {
+    let updateConditions = (target as any)[this.updateConditions] as [
+      () => boolean
+    ];
+    if (updateConditions !== undefined) {
+      updateConditions.push(condition);
+    } else {
+      (target as any)[this.updateConditions] = updateConditions = [condition];
+      (target as any)[this.updatingPromise] = Promise.resolve().then(() => {
+        delete (target as any)[this.updateConditions];
+        delete (target as any)[this.updatingPromise];
+        if (updateConditions.some(condition => condition())) {
+          this.callback(target);
+        }
+      });
+    }
   }
 
-  return function batchObserveProperty<Property extends keyof Target>(
+  async whenUpdateComplete(target: Target) {
+    await (target as any)[this.updatingPromise];
+  }
+}
+
+export class UpdatePipeline<Target> extends CallbackPipeline<Target> {
+  private propertyChangeDetectors: Map<
+    keyof Target,
+    ChangeDetector<any>
+  > = new Map();
+
+  private updatingProperties = Symbol();
+
+  constructor(
+    update: (
+      target: Target,
+      changedProperties?: Map<keyof Target, PropertyChangeState>
+    ) => void | Promise<void>
+  ) {
+    super(target => {
+      update(target, (target as any)[this.updatingProperties]);
+    });
+  }
+
+  observeProperty<Property extends keyof Target>(
     target: Target,
     key: Property,
-    changeDetector: (
-      oldValue: Target[Property],
-      value: Target[Property]
-    ) => boolean = notEqual
+    changeDetector: ChangeDetector<Target[Property]> = notEqual
   ) {
-    observeProperty<Target & BatchObserved, Target[Property]>(
+    Object.defineProperty(target, key, this.registerProperty(changeDetector)(
       target,
-      key,
-      (target, oldValue, value) => {
-        let updatingProperties = target[UPDATING_PROPERTIES];
-        if (updatingProperties !== undefined) {
-          if (updatingProperties.has(key)) {
-            const updateState = updatingProperties.get(key)!;
-            if (changeDetector(updateState.oldValue, value)) {
-              updateState.value = value;
-            } else {
-              updatingProperties.delete(key);
-            }
-          } else if (changeDetector(oldValue, value)) {
-            updatingProperties.set(key, { oldValue, value });
+      key
+    ) as TypedPropertyDescriptor<Target[Property]>);
+  }
+
+  registerProperty<Property extends keyof Target>(
+    changeDetector: ChangeDetector<Target[Property]> = notEqual
+  ) {
+    return (
+      target: Target,
+      propertyKey: Property,
+      descriptor?: TypedPropertyDescriptor<Target[Property]>
+    ): any => {
+      this.propertyChangeDetectors.set(propertyKey, changeDetector);
+      return onSet<Target, Property>((target, oldValue, value) =>
+        this.requestPropertyUpdate(target, propertyKey, oldValue, value)
+      )(target, propertyKey, descriptor);
+    };
+  }
+
+  requestPropertyUpdate<Property extends keyof Target>(
+    target: Target,
+    key: Property,
+    oldValue: Target[Property],
+    value: Target[Property]
+  ) {
+    const changeDetector = this.propertyChangeDetectors.get(key);
+    if (changeDetector !== undefined) {
+      let updatingProperties = (target as any)[this.updatingProperties] as
+        | Map<keyof Target, PropertyChangeState>
+        | undefined;
+      if (updatingProperties !== undefined) {
+        if (updatingProperties.has(key)) {
+          const updateState = updatingProperties.get(key)!;
+          if (changeDetector(updateState.oldValue, value)) {
+            updateState.value = value;
+          } else {
+            updatingProperties.delete(key);
           }
         } else if (changeDetector(oldValue, value)) {
-          target[UPDATING_PROPERTIES] = updatingProperties = new Map([
-            [key, { oldValue, value }]
-          ]);
-          Promise.resolve().then(() => {
-            delete target[UPDATING_PROPERTIES];
-            if (updatingProperties!.size > 0) {
-              callback(target, updatingProperties!);
-            }
-          });
+          updatingProperties.set(key, { oldValue, value });
         }
+      } else if (changeDetector(oldValue, value)) {
+        (target as any)[this.updatingProperties] = updatingProperties = new Map(
+          [[key, { oldValue, value }]]
+        );
+        this.requestUpdate(target, () => updatingProperties!.size > 0);
+        this.whenUpdateComplete(target).then(
+          () => delete (target as any)[this.updatingProperties]
+        );
       }
-    );
-  };
+    }
+  }
 }
