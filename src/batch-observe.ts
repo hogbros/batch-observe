@@ -13,34 +13,66 @@ function notEqual(a: any, b: any) {
   return a !== b;
 }
 
-export class UpdatePipeline<Target> {
+export class CallbackPipeline<Target> {
+  private updatingPromise = Symbol();
+  private updateConditions = Symbol();
+
+  constructor(private callback: (target: Target) => void) {}
+
+  requestUpdate(target: Target, condition: () => boolean = () => true) {
+    let updateConditions = (target as any)[this.updateConditions] as [
+      () => boolean
+    ];
+    if (updateConditions !== undefined) {
+      updateConditions.push(condition);
+    } else {
+      (target as any)[this.updateConditions] = updateConditions = [condition];
+      (target as any)[this.updatingPromise] = Promise.resolve().then(() => {
+        delete (target as any)[this.updateConditions];
+        delete (target as any)[this.updatingPromise];
+        if (updateConditions.some(condition => condition())) {
+          this.callback(target);
+        }
+      });
+    }
+  }
+
+  async whenUpdateComplete(target: Target) {
+    await (target as any)[this.updatingPromise];
+  }
+}
+
+export class UpdatePipeline<Target> extends CallbackPipeline<Target> {
   private propertyChangeDetectors: Map<
     keyof Target,
     ChangeDetector<any>
   > = new Map();
 
   private updatingProperties = Symbol();
-  private updatingPromise = Symbol();
 
   constructor(
-    private update: (
+    update: (
       target: Target,
       changedProperties?: Map<keyof Target, PropertyChangeState>
     ) => void | Promise<void>
-  ) {}
+  ) {
+    super(target => {
+      update(target, (target as any)[this.updatingProperties]);
+    });
+  }
 
   observeProperty<Property extends keyof Target>(
     target: Target,
     key: Property,
     changeDetector: ChangeDetector<Target[Property]> = notEqual
   ) {
-    Object.defineProperty(target, key, this.decorateProperty(changeDetector)(
+    Object.defineProperty(target, key, this.registerProperty(changeDetector)(
       target,
       key
     ) as TypedPropertyDescriptor<Target[Property]>);
   }
 
-  decorateProperty<Property extends keyof Target>(
+  registerProperty<Property extends keyof Target>(
     changeDetector: ChangeDetector<Target[Property]> = notEqual
   ) {
     return (
@@ -63,7 +95,7 @@ export class UpdatePipeline<Target> {
   ) {
     const changeDetector = this.propertyChangeDetectors.get(key);
     if (changeDetector !== undefined) {
-      const updatingProperties = (target as any)[this.updatingProperties] as
+      let updatingProperties = (target as any)[this.updatingProperties] as
         | Map<keyof Target, PropertyChangeState>
         | undefined;
       if (updatingProperties !== undefined) {
@@ -78,27 +110,14 @@ export class UpdatePipeline<Target> {
           updatingProperties.set(key, { oldValue, value });
         }
       } else if (changeDetector(oldValue, value)) {
-        (target as any)[this.updatingProperties] = new Map([
-          [key, { oldValue, value }]
-        ]);
-        this.requestUpdate(target);
+        (target as any)[this.updatingProperties] = updatingProperties = new Map(
+          [[key, { oldValue, value }]]
+        );
+        this.requestUpdate(target, () => updatingProperties!.size > 0);
+        this.whenUpdateComplete(target).then(
+          () => delete (target as any)[this.updatingProperties]
+        );
       }
     }
-  }
-
-  requestUpdate(target: Target) {
-    (target as any)[this.updatingPromise] = Promise.resolve().then(() => {
-      const updatingProperties = (target as any)[this.updatingProperties] as
-        | Map<keyof Target, PropertyChangeState>
-        | undefined;
-      delete (target as any)[this.updatingProperties];
-      if (updatingProperties === undefined || updatingProperties.size > 0) {
-        return this.update(target, updatingProperties);
-      }
-    });
-  }
-
-  async whenUpdateComplete(target: Target) {
-    await (target as any)[this.updatingPromise];
   }
 }

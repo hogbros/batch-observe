@@ -1,30 +1,62 @@
-import { UpdatePipeline, PropertyChangeState } from "../src/batch-observe";
+import {
+  CallbackPipeline,
+  UpdatePipeline,
+  PropertyChangeState
+} from "../src/batch-observe";
 import { spy } from "sinon";
 import { expect } from "chai";
 
-describe("batchObserve", function() {
-  it("asynchronously calls the callback", async function() {
-    const callbackSpy = spy();
-    const pipeline = new UpdatePipeline<MyClass>(callbackSpy);
-    class MyClass {
-      @pipeline.decorateProperty()
-      foo?: string;
-    }
-    const myObject = new MyClass();
-    myObject.foo = "bar";
+describe("CallbackPipeline", function() {
+  describe("requestUpdate", function() {
+    it("asynchronously calls the callback", async function() {
+      const callbackSpy = spy();
+      const pipeline = new CallbackPipeline<typeof myObject>(callbackSpy);
+      const myObject = {};
+      pipeline.requestUpdate(myObject);
 
-    expect(callbackSpy).to.not.have.been.called;
-    await pipeline.whenUpdateComplete(myObject);
-    expect(callbackSpy).to.have.been.called;
+      expect(callbackSpy).to.not.have.been.called;
+      await pipeline.whenUpdateComplete(myObject);
+      expect(callbackSpy).to.have.been.called;
+    });
+    it("will call the callback only once in the same tick", async function() {
+      const callbackSpy = spy();
+      const pipeline = new CallbackPipeline<typeof myObject>(callbackSpy);
+      const myObject = {};
+      pipeline.requestUpdate(myObject);
+      pipeline.requestUpdate(myObject);
+
+      expect(callbackSpy).to.not.have.been.called;
+      await pipeline.whenUpdateComplete(myObject);
+      expect(callbackSpy).to.have.been.calledOnce;
+    });
   });
+  it("will allow multiple pipelines to be registered to an object", async function() {
+    const callbackSpy1 = spy();
+    const callbackSpy2 = spy();
+    const pipeline1 = new CallbackPipeline<typeof myObject>(callbackSpy1);
+    const pipeline2 = new CallbackPipeline<typeof myObject>(callbackSpy2);
+    const myObject = {};
+    pipeline1.requestUpdate(myObject);
+    pipeline2.requestUpdate(myObject);
+
+    await Promise.all([
+      pipeline1.whenUpdateComplete(myObject),
+      pipeline2.whenUpdateComplete(myObject)
+    ]);
+    expect(callbackSpy1).to.have.been.calledOnce;
+    expect(callbackSpy2).to.have.been.calledOnce;
+  });
+});
+
+describe("UpdatePipeline", function() {
   it("will pass all updated properties to the callback", async function() {
     const callbackSpy = spy();
     const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
     class MyClass {
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       foo: string = "a";
 
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       bar: string = "b";
     }
     const myObject = new MyClass();
@@ -51,7 +83,7 @@ describe("batchObserve", function() {
     const callbackSpy = spy();
     const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
     class MyClass {
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       foo: string = "a";
     }
     const myObject = new MyClass();
@@ -74,10 +106,10 @@ describe("batchObserve", function() {
     const callbackSpy = spy();
     const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
     class MyClass {
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       foo: string = "a";
 
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       bar: string = "b";
     }
     const myObject = new MyClass();
@@ -98,7 +130,7 @@ describe("batchObserve", function() {
     const callbackSpy = spy();
     const pipeline = new UpdatePipeline<typeof myObject>(callbackSpy);
     class MyClass {
-      @pipeline.decorateProperty()
+      @pipeline.registerProperty()
       foo: string = "a";
     }
     const myObject = new MyClass();
@@ -110,32 +142,5 @@ describe("batchObserve", function() {
 
     await pipeline.whenUpdateComplete(myObject);
     expect(callbackSpy).to.not.have.been.called;
-  });
-  it("will allow multiple update pipelines to be registered to an object", async function() {
-    const callbackSpy1 = spy();
-    const callbackSpy2 = spy();
-    const pipeline1 = new UpdatePipeline<typeof myObject>(callbackSpy1);
-    const pipeline2 = new UpdatePipeline<typeof myObject>(callbackSpy2);
-    class MyClass {
-      @pipeline1.decorateProperty()
-      @pipeline2.decorateProperty()
-      foo: string = "a";
-    }
-    const myObject = new MyClass();
-    await Promise.all([
-      pipeline1.whenUpdateComplete(myObject),
-      pipeline2.whenUpdateComplete(myObject)
-    ]);
-    callbackSpy1.resetHistory();
-    callbackSpy2.resetHistory();
-
-    myObject.foo = "b";
-
-    await Promise.all([
-      pipeline1.whenUpdateComplete(myObject),
-      pipeline2.whenUpdateComplete(myObject)
-    ]);
-    expect(callbackSpy1).to.have.been.calledOnce;
-    expect(callbackSpy2).to.have.been.calledOnce;
   });
 });
